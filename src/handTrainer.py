@@ -217,10 +217,20 @@ class HandTrainer():
 
     def generateFirstTrainingScene(self):
         self.sceneIsClear = False
+        # Initialize problemLabel before creating buttons
+        if self.sceneDict:
+            problemVal = np.random.randint(0, len(self.sceneDict))
+            self.problemLabel = list(self.sceneDict.keys())[problemVal]
+        else:
+            # If sceneDict is empty, set a default problemLabel
+            self.problemLabel = None
+        
         sceneLayout = QVBoxLayout()
         sceneLayout.addWidget(self.createSceneProblemTitle())
         sceneLayout.addLayout(self.createMainSceneComponents())
-        sceneLayout.addLayout(self.createSceneButtons())
+        # Only create scene buttons if we have a valid problemLabel
+        if self.problemLabel is not None:
+            sceneLayout.addLayout(self.createSceneButtons())
         self.leftTrainerLayout.addLayout(sceneLayout)
         self.generateTrainingScenario()
 
@@ -246,11 +256,21 @@ class HandTrainer():
         cardLayout.setContentsMargins(50, 0, 50, 50)
         self.card1 = QLabel()
         self.card2 = QLabel()
+        
+        # Imposta dimensioni minime per le carte per evitare problemi di ridimensionamento
+        self.card1.setMinimumSize(120, 168)  # Proporzioni standard delle carte da poker (3:4.2)
+        self.card2.setMinimumSize(120, 168)
+        self.card1.setMaximumSize(200, 280)  # Dimensioni massime ragionevoli
+        self.card2.setMaximumSize(200, 280)
+        
         cardLayout.addWidget(self.card1)
         cardLayout.addWidget(self.card2)
         cardLayout.setSpacing(30)
-        self.cardHeight = self.card1.height()
-        self.cardWidth = self.card1.width()
+        
+        # Usa dimensioni predefinite ottimali invece di quelle del QLabel vuoto
+        self.cardHeight = 168  # Altezza standard ottimale
+        self.cardWidth = 120   # Larghezza standard ottimale
+        
         return cardLayout
 
     def createSceneRandomizer(self):
@@ -263,16 +283,28 @@ class HandTrainer():
 
     def createSceneButtons(self):
         self.sceneButtonLayout = QHBoxLayout()
-        callButton = QPushButton("Call")
-        raiseButton = QPushButton("Raise")
+        
+        # Verifica quali azioni sono disponibili nel file di strategia corrente
+        weightDict = self.sceneDict[self.problemLabel]
+        hasRaise = "raise" in weightDict and weightDict["raise"] and len(weightDict["raise"]) > 0
+        hasCall = "call" in weightDict and weightDict["call"] and len(weightDict["call"]) > 0
+        
+        # Crea solo i bottoni per le azioni disponibili
+        if hasRaise:
+            raiseButton = QPushButton("Raise")
+            raiseButton.clicked.connect(self.scenarioRaiseButtonCallback)
+            self.sceneButtonLayout.addWidget(raiseButton)
+        
+        if hasCall:
+            callButton = QPushButton("Call")
+            callButton.clicked.connect(self.scenarioCallButtonCallback)
+            self.sceneButtonLayout.addWidget(callButton)
+        
+        # Il bottone Fold è sempre disponibile (implicito)
         foldButton = QPushButton("Fold")
-
-        callButton.clicked.connect(self.scenarioCallButtonCallback)
-        raiseButton.clicked.connect(self.scenarioRaiseButtonCallback)
         foldButton.clicked.connect(self.scenarioFoldButtonCallback)
-        self.sceneButtonLayout.addWidget(raiseButton)
-        self.sceneButtonLayout.addWidget(callButton)
         self.sceneButtonLayout.addWidget(foldButton)
+        
         return self.sceneButtonLayout
 
     def generateTrainingScenario(self):
@@ -283,13 +315,16 @@ class HandTrainer():
             self.trainingLabel.setText("Reporting Inactive")
             self.trainingLabel.setStyleSheet('color: red')
 
-        self.clearLayout(self.sceneButtonLayout)
-        self.createSceneButtons()
-        self.leftTrainerLayout.addLayout(self.sceneButtonLayout)
-        self.updateScenarioProblem()
-        self.updateScenarioRandomizer()
-        self.getHand()
-        self.updateHandDrawing(int(self.cardWidth/2.8), int(self.cardHeight/1.55))
+        # Only proceed if we have scenes loaded
+        if self.sceneDict:
+            self.updateScenarioProblem()
+            self.clearLayout(self.sceneButtonLayout)
+            self.createSceneButtons()
+            self.leftTrainerLayout.addLayout(self.sceneButtonLayout)
+            self.updateScenarioRandomizer()
+            self.getHand()
+            # Usa dimensioni ottimali per le carte invece di divisioni arbitrarie
+            self.updateHandDrawing(self.cardWidth, self.cardHeight)
 
     def updateScenarioProblem(self):
         problemVal = np.random.randint(0, len(self.sceneDict))
@@ -323,26 +358,41 @@ class HandTrainer():
                 elif child.layout() is not None:
                     self.clearLayout(child.layout())
 
-    def updateHandDrawing(self, cardWidth, cardHeight):
+    def updateHandDrawing(self, cardWidth=None, cardHeight=None):
+        # Usa dimensioni predefinite se non specificate
+        if cardWidth is None:
+            cardWidth = self.cardWidth
+        if cardHeight is None:
+            cardHeight = self.cardHeight
+            
+        # Assicurati che le dimensioni siano ragionevoli
+        cardWidth = max(80, min(cardWidth, 200))  # Tra 80 e 200 pixel
+        cardHeight = max(112, min(cardHeight, 280))  # Mantieni proporzioni 3:4.2
+        
         # Add error handling and debugging for image loading
         card1_path = f"{self.card1Path}.png"
         card2_path = f"{self.card2Path}.png"
         
         print(f"Loading cards from: {card1_path} and {card2_path}")
+        print(f"Card dimensions: {cardWidth}x{cardHeight}")
         
         pixmap1 = QPixmap(card1_path)
         if pixmap1.isNull():
             print(f"Failed to load first card image: {card1_path}")
             print(f"File exists: {os.path.exists(card1_path)}")
-        pixmap1 = pixmap1.scaled(cardWidth, cardHeight, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        self.card1.setPixmap(pixmap1)
+        else:
+            # Usa ridimensionamento di alta qualità
+            pixmap1 = pixmap1.scaled(cardWidth, cardHeight, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.card1.setPixmap(pixmap1)
 
         pixmap2 = QPixmap(card2_path)
         if pixmap2.isNull():
             print(f"Failed to load second card image: {card2_path}")
             print(f"File exists: {os.path.exists(card2_path)}")
-        pixmap2 = pixmap2.scaled(cardWidth, cardHeight, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        self.card2.setPixmap(pixmap2)
+        else:
+            # Usa ridimensionamento di alta qualità
+            pixmap2 = pixmap2.scaled(cardWidth, cardHeight, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.card2.setPixmap(pixmap2)
 
     def getHand(self):
         # Use absolute path for card images
@@ -381,18 +431,29 @@ class HandTrainer():
         weightDict = self.sceneDict[self.problemLabel]
         raiseWeight = 0
         callWeight = 0
-        for val in weightDict["raise"]:
-            if self.hand in val[0]:
-                raiseWeight += float(val[1])
-        if weightDict["call"] is not None:
+        
+        # Gestisci le azioni "raise" se presenti
+        if "raise" in weightDict and weightDict["raise"]:
+            for val in weightDict["raise"]:
+                if self.hand in val[0]:
+                    raiseWeight += float(val[1])
+        
+        # Gestisci le azioni "call" se presenti
+        if "call" in weightDict and weightDict["call"]:
             for val in weightDict["call"]:
                 if self.hand in val[0]:
                     callWeight += float(val[1])
-        return raiseWeight, callWeight, 1-raiseWeight-callWeight
+        
+        # Calcola il peso del fold
+        foldWeight = 1 - raiseWeight - callWeight
+        
+        return raiseWeight, callWeight, foldWeight
 
     def scenarioRaiseButtonCallback(self):
+        print("DEBUG: Risposta selezionata - RAISE")
         raiseWeight, callWeight, foldWeight = self.getWeights()
         spot_name = os.path.basename(self.problemLabel).replace('.txt', '')
+        print(f"DEBUG: Risposta corretta per {self.hand}: Raise={raiseWeight*100:.1f}%, Call={callWeight*100:.1f}%, Fold={foldWeight*100:.1f}%")
         
         if float(self.randomInt) / 100.0 >= callWeight+foldWeight:
             if self.report.isActive():
@@ -415,8 +476,10 @@ class HandTrainer():
             self.buildDisplayWeights(raiseWeight, callWeight, foldWeight)
 
     def scenarioCallButtonCallback(self):
+        print("DEBUG: Risposta selezionata - CALL")
         raiseWeight, callWeight, foldWeight = self.getWeights()
         spot_name = os.path.basename(self.problemLabel).replace('.txt', '')
+        print(f"DEBUG: Risposta corretta per {self.hand}: Raise={raiseWeight*100:.1f}%, Call={callWeight*100:.1f}%, Fold={foldWeight*100:.1f}%")
         
         if float(self.randomInt) / 100.0 >= foldWeight and self.randomInt/100 < (callWeight+foldWeight):
             if self.report.isActive():
@@ -439,8 +502,10 @@ class HandTrainer():
             self.buildDisplayWeights(raiseWeight, callWeight, foldWeight)
 
     def scenarioFoldButtonCallback(self):
+        print("DEBUG: Risposta selezionata - FOLD")
         raiseWeight, callWeight, foldWeight = self.getWeights()
         spot_name = os.path.basename(self.problemLabel).replace('.txt', '')
+        print(f"DEBUG: Risposta corretta per {self.hand}: Raise={raiseWeight*100:.1f}%, Call={callWeight*100:.1f}%, Fold={foldWeight*100:.1f}%")
         
         if float(self.randomInt) / 100.0 < foldWeight:
             if self.report.isActive():
